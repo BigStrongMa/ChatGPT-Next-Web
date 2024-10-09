@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { showToast } from "./components/ui-lib";
 import Locale from "./locales";
 import { RequestMessage } from "./client/api";
-import { ServiceProvider, REQUEST_TIMEOUT_MS } from "./constant";
-import isObject from "lodash-es/isObject";
-import { fetch as tauriFetch, Body, ResponseType } from "@tauri-apps/api/http";
+import { ServiceProvider } from "./constant";
+// import { fetch as tauriFetch, ResponseType } from "@tauri-apps/api/http";
+import { fetch as tauriStreamFetch } from "./utils/stream";
 
 export function trimTopic(topic: string) {
   // Fix an issue where double quotes still show in the Indonesian language
@@ -274,6 +274,19 @@ export function isDalle3(model: string) {
   return "dall-e-3" === model;
 }
 
+export function removeOutdatedEntries(
+  timeMap: Record<string, number>,
+): Record<string, number> {
+  const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  // Delete data from a month ago
+  Object.keys(timeMap).forEach((id) => {
+    if (timeMap[id] < oneMonthAgo) {
+      delete timeMap[id];
+    }
+  });
+  return timeMap;
+}
+
 export function showPlugins(provider: ServiceProvider, model: string) {
   if (
     provider == ServiceProvider.OpenAI ||
@@ -293,30 +306,23 @@ export function fetch(
   options?: Record<string, unknown>,
 ): Promise<any> {
   if (window.__TAURI__) {
-    const payload = options?.body || options?.data;
-    return tauriFetch(url, {
-      ...options,
-      body:
-        payload &&
-        ({
-          type: "Text",
-          payload,
-        } as any),
-      timeout: ((options?.timeout as number) || REQUEST_TIMEOUT_MS) / 1000,
-      responseType:
-        options?.responseType == "text" ? ResponseType.Text : ResponseType.JSON,
-    } as any);
+    return tauriStreamFetch(url, options);
   }
   return window.fetch(url, options);
 }
 
 export function adapter(config: Record<string, unknown>) {
-  const { baseURL, url, params, ...rest } = config;
+  const { baseURL, url, params, data: body, ...rest } = config;
   const path = baseURL ? `${baseURL}${url}` : url;
   const fetchUrl = params
     ? `${path}?${new URLSearchParams(params as any).toString()}`
     : path;
-  return fetch(fetchUrl as string, { ...rest, responseType: "text" });
+  return fetch(fetchUrl as string, { ...rest, body }).then((res) => {
+    const { status, headers, statusText } = res;
+    return res
+      .text()
+      .then((data: string) => ({ status, statusText, headers, data }));
+  });
 }
 
 export function safeLocalStorage(): {
@@ -377,4 +383,16 @@ export function safeLocalStorage(): {
       }
     },
   };
+}
+
+export function getOperationId(operation: {
+  operationId?: string;
+  method: string;
+  path: string;
+}) {
+  // pattern '^[a-zA-Z0-9_-]+$'
+  return (
+    operation?.operationId ||
+    `${operation.method.toUpperCase()}${operation.path.replaceAll("/", "_")}`
+  );
 }

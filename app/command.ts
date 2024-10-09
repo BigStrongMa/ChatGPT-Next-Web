@@ -35,9 +35,11 @@ export function useCommand(commands: Commands = {}) {
 interface ChatCommands {
   new?: Command;
   newm?: Command;
+  copy?: Command;
   next?: Command;
   prev?: Command;
   clear?: Command;
+  fork?: Command;
   del?: Command;
 }
 
